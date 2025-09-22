@@ -1,37 +1,49 @@
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
+-- Global config
 getgenv().Enabled = false
 getgenv().Speed = 100
 getgenv().executed = false
 
+-- Attempt to bypass walkspeed detection
 local function bypassWalkSpeed()
     if getgenv().executed then
         if not getgenv().Enabled then return end
     else
         getgenv().executed = true
 
-        local mt = getrawmetatable(game)
-        setreadonly(mt, false)
+        -- Wrap in pcall in case getrawmetatable is blocked
+        local success, err = pcall(function()
+            local mt = getrawmetatable(game)
+            setreadonly(mt, false)
 
-        local oldindex = mt.__index
-        mt.__index = newcclosure(function(self, b)
-            if b == "WalkSpeed" then
-                return 16
-            end
-            return oldindex(self, b)
+            local oldindex = mt.__index
+            mt.__index = newcclosure(function(self, b)
+                if b == "WalkSpeed" then
+                    return 16 -- spoofed default
+                end
+                return oldindex(self, b)
+            end)
         end)
+
+        if not success then
+            warn("Bypass failed:", err)
+        end
     end
 end
 
+-- Call bypass once
 bypassWalkSpeed()
 
+-- GUI Setup
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local ScreenGui = Instance.new("ScreenGui", PlayerGui)
+local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "SpeedGUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = PlayerGui
 
 local Frame = Instance.new("Frame")
 Frame.Size = UDim2.new(0, 200, 0, 100)
@@ -63,29 +75,38 @@ SpeedBox.TextSize = 18
 SpeedBox.ClearTextOnFocus = false
 SpeedBox.Parent = Frame
 
+-- SpeedBox: Update speed
 SpeedBox.FocusLost:Connect(function()
 	local speed = tonumber(SpeedBox.Text)
 	if speed then
 		getgenv().Speed = speed
+        -- Apply immediately if enabled
+        if getgenv().Enabled then
+            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
+            if hum then
+                hum.WalkSpeed = getgenv().Speed
+            end
+        end
 	end
 end)
 
+-- Toggle button
 ToggleButton.MouseButton1Click:Connect(function()
 	getgenv().Enabled = not getgenv().Enabled
 	ToggleButton.Text = getgenv().Enabled and "Speed: ON" or "Speed: OFF"
 	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-	if hum and getgenv().Enabled then
-		hum.WalkSpeed = getgenv().Speed
-	elseif hum then
-		hum.WalkSpeed = 16
+	if hum then
+		hum.WalkSpeed = getgenv().Enabled and getgenv().Speed or 16
 	end
 end)
 
+-- Reapply speed after respawn
 LocalPlayer.CharacterAdded:Connect(function(char)
 	bypassWalkSpeed()
 	char:WaitForChild("Humanoid").WalkSpeed = getgenv().Enabled and getgenv().Speed or 16
 end)
 
+-- Constantly reapply speed if enabled
 task.spawn(function()
 	while true do
 		task.wait(0.2)
