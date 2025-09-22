@@ -1,123 +1,81 @@
+--// Configuration
+getgenv().Enabled = false
+getgenv().Speed = 100
+
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- Global config
-getgenv().Enabled = false
-getgenv().Speed = 100
-getgenv().executed = false
-
--- Attempt to bypass walkspeed detection
-local function bypassWalkSpeed()
-    if getgenv().executed then
-        if not getgenv().Enabled then return end
-    else
-        getgenv().executed = true
-
-        -- Wrap in pcall in case getrawmetatable is blocked
-        local success, err = pcall(function()
-            local mt = getrawmetatable(game)
-            setreadonly(mt, false)
-
-            local oldindex = mt.__index
-            mt.__index = newcclosure(function(self, b)
-                if b == "WalkSpeed" then
-                    return 16 -- spoofed default
-                end
-                return oldindex(self, b)
-            end)
-        end)
-
-        if not success then
-            warn("Bypass failed:", err)
+--// Apply speed function
+local function applySpeed()
+    local character = LocalPlayer.Character
+    if character then
+        local humanoid = character:FindFirstChildWhichIsA("Humanoid")
+        if humanoid then
+            humanoid.WalkSpeed = getgenv().Enabled and getgenv().Speed or 16
         end
     end
 end
 
--- Call bypass once
-bypassWalkSpeed()
-
--- GUI Setup
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "SpeedGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-ScreenGui.Parent = PlayerGui
-
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 200, 0, 100)
-Frame.Position = UDim2.new(0.1, 0, 0.1, 0)
-Frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-Frame.Active = true
-Frame.Draggable = true
-Frame.Parent = ScreenGui
-
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(0, 180, 0, 30)
-ToggleButton.Position = UDim2.new(0, 10, 0, 10)
-ToggleButton.BackgroundColor3 = Color3.fromRGB(80, 130, 180)
-ToggleButton.TextColor3 = Color3.new(1, 1, 1)
-ToggleButton.Text = "Speed: OFF"
-ToggleButton.Font = Enum.Font.SourceSansBold
-ToggleButton.TextSize = 18
-ToggleButton.Parent = Frame
-
-local SpeedBox = Instance.new("TextBox")
-SpeedBox.Size = UDim2.new(0, 180, 0, 30)
-SpeedBox.Position = UDim2.new(0, 10, 0, 50)
-SpeedBox.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-SpeedBox.TextColor3 = Color3.new(1, 1, 1)
-SpeedBox.Text = tostring(getgenv().Speed)
-SpeedBox.PlaceholderText = "Enter Speed"
-SpeedBox.Font = Enum.Font.SourceSans
-SpeedBox.TextSize = 18
-SpeedBox.ClearTextOnFocus = false
-SpeedBox.Parent = Frame
-
--- SpeedBox: Update speed
-SpeedBox.FocusLost:Connect(function()
-	local speed = tonumber(SpeedBox.Text)
-	if speed then
-		getgenv().Speed = speed
-        -- Apply immediately if enabled
-        if getgenv().Enabled then
-            local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-            if hum then
-                hum.WalkSpeed = getgenv().Speed
-            end
-        end
-	end
+--// Re-apply on respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    wait(1)
+    applySpeed()
 end)
 
--- Toggle button
-ToggleButton.MouseButton1Click:Connect(function()
+--// UI Setup
+local gui = Instance.new("ScreenGui", LocalPlayer:WaitForChild("PlayerGui"))
+gui.Name = "SpeedGUI"
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.new(0, 200, 0, 100)
+frame.Position = UDim2.new(0.05, 0, 0.05, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.Active = true
+frame.Draggable = true
+
+local toggle = Instance.new("TextButton", frame)
+toggle.Size = UDim2.new(0, 180, 0, 30)
+toggle.Position = UDim2.new(0, 10, 0, 10)
+toggle.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+toggle.TextColor3 = Color3.new(1, 1, 1)
+toggle.Font = Enum.Font.SourceSansBold
+toggle.TextSize = 18
+toggle.Text = "Speed: OFF"
+
+local box = Instance.new("TextBox", frame)
+box.Size = UDim2.new(0, 180, 0, 30)
+box.Position = UDim2.new(0, 10, 0, 50)
+box.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+box.TextColor3 = Color3.new(1, 1, 1)
+box.Font = Enum.Font.SourceSans
+box.TextSize = 18
+box.Text = tostring(getgenv().Speed)
+box.ClearTextOnFocus = false
+box.PlaceholderText = "Enter Speed"
+
+--// Toggle Button Clicked
+toggle.MouseButton1Click:Connect(function()
 	getgenv().Enabled = not getgenv().Enabled
-	ToggleButton.Text = getgenv().Enabled and "Speed: ON" or "Speed: OFF"
-	local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid")
-	if hum then
-		hum.WalkSpeed = getgenv().Enabled and getgenv().Speed or 16
+	toggle.Text = getgenv().Enabled and "Speed: ON" or "Speed: OFF"
+	applySpeed()
+end)
+
+--// Speed Changed
+box.FocusLost:Connect(function()
+	local val = tonumber(box.Text)
+	if val then
+		getgenv().Speed = val
+		applySpeed()
 	end
 end)
 
--- Reapply speed after respawn
-LocalPlayer.CharacterAdded:Connect(function(char)
-	bypassWalkSpeed()
-	char:WaitForChild("Humanoid").WalkSpeed = getgenv().Enabled and getgenv().Speed or 16
-end)
-
--- Constantly reapply speed if enabled
+--// Loop to maintain speed
 task.spawn(function()
 	while true do
 		task.wait(0.2)
 		if getgenv().Enabled then
-			local char = LocalPlayer.Character
-			if char then
-				local hum = char:FindFirstChild("Humanoid")
-				if hum then
-					hum.WalkSpeed = getgenv().Speed
-				end
-			end
+			applySpeed()
 		end
 	end
 end)
